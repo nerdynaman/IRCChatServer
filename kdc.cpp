@@ -1,104 +1,41 @@
 #include "kdc.hh"
 
-int serverSetup(){
-  int port = 8080;
-  int sock;
-  struct sockaddr_in addr;
-
-  sock = socket(AF_INET, SOCK_STREAM, 0);
-  if (sock < 0){
-    perror("[-]Socket error");
-  }
-  memset(&addr, '\0', sizeof(addr));;
-  addr.sin_family = AF_INET;
-  addr.sin_port = htons(port);
-
-  if (bind(sock, (struct sockaddr*)&addr, sizeof(addr)) < 0){
-    perror("[-]Bind error");
-  }
-
-  if (listen(sock, 2) < 0){
-    perror("[-]Listen error");
-  }
-  return sock;
-}
-
-int verifyUser(char* userName){
-  // check if userName file exists
-  FILE* fp = fopen(userName, "r");
-  if (fp == NULL){
-    return -1;
-  }
-  fclose(fp);
-  return 0;
-}
-
-unsigned char* getSessionKey(char* userName){
-  // use /dev/urandom to generate 32bytes random key
-  unsigned char* sessionKey = (unsigned char*)malloc(32);
-  FILE* urandom = fopen("/dev/urandom", "r");
-  fread(sessionKey, 1, 32, urandom);
-  fclose(urandom);
-  // for (int i=0; i<32; i++){
-  //   printf("%02x", sessionKey[i]);
-  // }
-  // printf("\n");
-  return sessionKey;
-}
-// unsigned char* getIrcServerKey(){
-//   FILE* fp = fopen("ircServerKey", "r");
-//   unsigned char* ircServerKey = (unsigned char*)malloc(32);
-//   fread(ircServerKey, 1, 32, fp);
-//   fclose(fp);
-//   return ircServerKey;
-// }
-// unsigned char* getUserKey(char* userName){
-//   // open userName file
-//   FILE* fp = fopen(userName, "r");
-//   unsigned char* userKey = (unsigned char*)malloc(32);
-//   fread(userKey, 1, 32, fp);
-//   fclose(fp);
-//   return userKey;
-// }
-// encryptRet* encrypt(unsigned char* key, unsigned char* msg,int msgLen){
-//   EVP_CIPHER_CTX *ctx;
-//   unsigned char* ciphertext = (unsigned char*)malloc(1024);
-//   int len;
-//   int ciphertext_len;
-//   ctx = EVP_CIPHER_CTX_new();
-//   EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, NULL);
-//   EVP_EncryptUpdate(ctx, ciphertext, &len, msg, msgLen);
-//   ciphertext_len = len;
-//   EVP_EncryptFinal_ex(ctx, ciphertext + len, &len);
-//   ciphertext_len += len;
-//   EVP_CIPHER_CTX_free(ctx);
-//   encryptRet* ret = (encryptRet*)malloc(sizeof(encryptRet));
-//   ret->ciphertext = ciphertext;
-//   ret->ciphertext_len = ciphertext_len;
-//   return ret;
-// }
 encryptRet* generateTicket(char* userName, unsigned char* sessionKey){
   unsigned char* ticket = (unsigned char*)malloc(37);
   memcpy(ticket, userName, 5);
   memcpy(ticket+5, sessionKey, 32);
-  encryptRet* ret = encrypt(getIrcServerKey(), ticket, 37);
+  unsigned char* IV = getRand(16);
+  encryptRet* ret = encrypt(getIrcServerKey(), ticket, 37, IV);
+  // for (int i=0; i<ret->ciphertext_len; i++){
+  //   printf("%02x ",ret->ciphertext[i]);
+  // }
+  // printf("\n");
   free(ticket);
-  for (int i=0; i<ret->ciphertext_len; i++){
-    printf("%02x ",ret->ciphertext[i]);
-  }
-  printf("\n");
+  unsigned char* ticketEnc = (unsigned char*)malloc(ret->ciphertext_len+16);
+  memcpy(ticketEnc, ret->ciphertext, ret->ciphertext_len);
+  memcpy(ticketEnc+ret->ciphertext_len, IV, 16);
+  free(ret->ciphertext);
+  free(IV);
+  ret->ciphertext = ticketEnc;
+  ret->ciphertext_len = ret->ciphertext_len+16;
   return ret;
 }
 
 encryptRet* generateMessage(char* nonce, unsigned char* sessionKey, encryptRet* ticket, char* userName){
-  unsigned char* msgMsg = (unsigned char*)malloc(4+32+ticket->ciphertext_len+1);
+  unsigned char* msgMsg = (unsigned char*)malloc(4+32+ticket->ciphertext_len);
   memcpy(msgMsg, nonce, 4);
   memcpy(msgMsg+4, sessionKey, 32);
   memcpy(msgMsg+36, ticket->ciphertext, ticket->ciphertext_len);
-  encryptRet* msg = encrypt(getUserKey(userName), msgMsg, 36+ticket->ciphertext_len);
-  free(msgMsg);
-  free(ticket->ciphertext);
-  free(ticket);
+  unsigned char* IV = getRand(16);
+  encryptRet* msg = encrypt(getUserKey(userName), msgMsg, 36+ticket->ciphertext_len, IV);
+  unsigned char* msgEnc = (unsigned char*)malloc(msg->ciphertext_len+16);
+  printf("msg length: %d\n", msg->ciphertext_len);
+  memcpy(msgEnc, msg->ciphertext, msg->ciphertext_len);
+  memcpy(msgEnc+msg->ciphertext_len, IV, 16);
+  free(msg->ciphertext);
+  free(IV);
+  msg->ciphertext = msgEnc;
+  msg->ciphertext_len = msg->ciphertext_len+16;
   return msg;
 }
 
@@ -148,7 +85,7 @@ void* clientHandler(void* arg){
 int main(){
   signal(SIGPIPE,SIG_IGN);
   pthread_t tid;
-  int sock = serverSetup();
+  int sock = serverSetup(8080);
   int clientSock;
   while(1){
     clientSock = accept(sock, (struct sockaddr*)NULL, NULL);

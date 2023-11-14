@@ -16,6 +16,7 @@ typedef struct encryptRet{
   unsigned char* ciphertext;
   int ciphertext_len;
 } encryptRet;
+
 unsigned char* getIrcServerKey(){
   FILE* fp = fopen("ircServerKey", "r");
   unsigned char* ircServerKey = (unsigned char*)malloc(32);
@@ -31,13 +32,61 @@ unsigned char* getUserKey(char* userName){
   fclose(fp);
   return userKey;
 }
-encryptRet* encrypt(unsigned char* key, unsigned char* msg,int msgLen){
+unsigned char* getRand(int size){
+  unsigned char* randBytes = (unsigned char*) malloc(size);
+  FILE* urandom = fopen("/dev/urandom", "r");
+  fread(randBytes, 1, size, urandom);
+  fclose(urandom);
+  return randBytes;
+}
+int serverSetup(int port){
+  int sock;
+  struct sockaddr_in addr;
+
+  sock = socket(AF_INET, SOCK_STREAM, 0);
+  if (sock < 0){
+    perror("[-]Socket error");
+  }
+  memset(&addr, '\0', sizeof(addr));;
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(port);
+
+  if (bind(sock, (struct sockaddr*)&addr, sizeof(addr)) < 0){
+    perror("[-]Bind error");
+  }
+
+  if (listen(sock, 2) < 0){
+    perror("[-]Listen error");
+  }
+  return sock;
+}
+
+int verifyUser(char* userName){
+  // check if userName file exists
+  FILE* fp = fopen(userName, "r");
+  if (fp == NULL){
+    return -1;
+  }
+  fclose(fp);
+  return 0;
+}
+
+unsigned char* getSessionKey(char* userName){
+  // use /dev/urandom to generate 32bytes random key
+  unsigned char* sessionKey = (unsigned char*)malloc(32);
+  FILE* urandom = fopen("/dev/urandom", "r");
+  fread(sessionKey, 1, 32, urandom);
+  fclose(urandom);
+  return sessionKey;
+}
+
+encryptRet* encrypt(unsigned char* key, unsigned char* msg,int msgLen, unsigned char* IV){
   EVP_CIPHER_CTX *ctx;
   unsigned char* ciphertext = (unsigned char*)malloc(1024);
   int len;
   int ciphertext_len;
   ctx = EVP_CIPHER_CTX_new();
-  EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, NULL);
+  EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, IV);
   EVP_EncryptUpdate(ctx, ciphertext, &len, msg, msgLen);
   ciphertext_len = len;
   EVP_EncryptFinal_ex(ctx, ciphertext + len, &len);
@@ -48,14 +97,14 @@ encryptRet* encrypt(unsigned char* key, unsigned char* msg,int msgLen){
   ret->ciphertext_len = ciphertext_len;
   return ret;
 }
-encryptRet* decrypt(unsigned char* key, unsigned char* ciphertext, int msgLen){
+encryptRet* decrypt(unsigned char* key, unsigned char* ciphertext, int msgLen, unsigned char* IV){
   EVP_CIPHER_CTX *ctx;
   int len;
   int plaintext_len;
   unsigned char* plaintext = (unsigned char*)malloc(1024);
   encryptRet* ret = (encryptRet*)malloc(sizeof(encryptRet));
   ctx = EVP_CIPHER_CTX_new();
-  EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, NULL);
+  EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, IV);
   EVP_DecryptUpdate(ctx, plaintext, &len, ciphertext, msgLen);
   plaintext_len = len;
   EVP_DecryptFinal_ex(ctx, plaintext + len, &len);
