@@ -1,4 +1,15 @@
 #include "kdc.hh"
+#include "irc.hh"
+
+userInfo usersInIRC[100];
+int userCount = 0;
+
+Group groups[20];  // Maximum of 20 groups
+int groupCount = 0;
+
+// storing tickets and userName for each user
+userTicket userTickets[100];
+int userTicketCount = 0;
 
 int authenticate(int clientSock){
 	// reading ticket from client
@@ -13,7 +24,16 @@ int authenticate(int clientSock){
 	memcpy(userName, ticket, 5);
 	unsigned char* sessionKey = (unsigned char*)malloc(32);
 	memcpy(sessionKey, ticket+5, 32);
-	
+	sessionKey[32] = '\0';
+	userName[5] = '\0';
+	// checking for ticket replay attack 
+	for (int i = 0; i < userTicketCount; i++){
+		if (strcmp(userTickets[i].sessionKey, sessionKey) == 0 && strcmp(userTickets[i].userName, userName) == 0){
+			printf("[-]Ticket replay attack detected\n");
+			return 0;
+		}
+	}
+	printf("[+]Ticket replay attack passed\n");
 	// recieve challenge from client to verify authenticity of irc server
 	res = read(clientSock, msg, 1024);
 	printf("%d data recieved\n",res);
@@ -47,6 +67,19 @@ int authenticate(int clientSock){
 		return 0;
 	}
 	printf("[+]Challenge response passed\n");
+
+	// adding user to list of users in irc
+	userInfo* user = (userInfo*)malloc(sizeof(userInfo));
+	user->userName = userName;
+	user->pubKey = NULL;
+	usersInIRC[userCount++] = *user;
+	
+	// adding userTicket to list of userTickets
+	userTicket* ticketObj = (userTicket*)malloc(sizeof(userTicket));
+	ticketObj->userName = userName;
+	ticketObj->sessionKey = sessionKey;
+	userTickets[userTicketCount++] = *ticketObj;
+
 	return 1;
 }
 
@@ -57,7 +90,7 @@ void* clientHandler(void* arg){
 		printf("[-]Authentication failed\n");
 		return NULL;
 	}
-	// add client to list of clients
+
 	
 	return NULL;
 }

@@ -123,7 +123,7 @@ int serverSetup(int port){
     perror("[-]Bind error");
   }
 
-  if (listen(sock, 2) < 0){
+  if (listen(sock, 10) < 0){
     perror("[-]Listen error");
   }
   return sock;

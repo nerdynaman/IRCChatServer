@@ -29,6 +29,7 @@ void* clientHandler(void* arg){
   char* sender = strtok(buffer, ":");
   char* receiver = strtok(NULL, ":");
   char* nonce = strtok(NULL, ":");
+  printf("sender: %s request recieved\n", sender);
   // if reciever is not kdc, drop
   if (strcmp(receiver, "kdc") != 0){
     printf("[-]Receiver is not kdc\n");
@@ -55,7 +56,7 @@ void* clientHandler(void* arg){
   if (write(clientSock, msg->ciphertext, msg->ciphertext_len) < 0){
     perror("[-]Write error");
   }
-  
+  printf("msg sent\n");
   free(msg->ciphertext);
   free(msg);
   close(clientSock);

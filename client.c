@@ -13,6 +13,31 @@ typedef struct encryptRet{
   int ciphertext_len;
 } encryptRet;
 
+void ticketReplayAttack(unsigned char* ticket, int ticketLen){
+  int ch = fork();
+  if (ch == 0){
+    // child process
+    sleep(1);
+    int port = 9090;
+    int sock, clientSock;
+    struct sockaddr_in addr;
+    sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0){
+      perror("[-]Socket error");
+    }
+    memset(&addr, '\0', sizeof(addr));;
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    //   connect
+    if (connect(sock, (struct sockaddr*)&addr, sizeof(addr)) < 0){
+      perror("[-]Connect error");
+    }
+    // send ticket first then send challenge
+    int res = send(sock, ticket, ticketLen, 0);
+    printf("ticket sent %d\n", res);
+  }
+}
+
 encryptRet* encrypt(unsigned char* key, unsigned char* msg,int msgLen, unsigned char* IV){
   EVP_CIPHER_CTX *ctx;
   unsigned char* ciphertext = (unsigned char*)malloc(1024);
@@ -116,6 +141,7 @@ int main(){
   // print all elements in hexa, first 4bytes are nonce
   // get nonce and session key
     unsigned char* ticket = (unsigned char*)malloc(decrypted->ciphertext_len-36);
+    int ticketLen = decrypted->ciphertext_len-36;
   memcpy(ticket, decrypted->ciphertext+36, decrypted->ciphertext_len-36);
   // encryptRet* ticketDecrypted = decrypt(ircserverkey, ticket);
   //   first 5bytes are username and print it
@@ -179,7 +205,7 @@ int main(){
   res = send(sock, msg2, newChallengeResponse->ciphertext_len+16, 0);
   printf("new challenge response sent %d\n", res);
 
-
+  // ticketReplayAttack(ticket, ticketLen);
   
   return 0;
 }
